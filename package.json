@@ -4,12 +4,12 @@
   "scripts": {
     "start": "ts-node src/index.ts",
     "dev": "nodemon --exec ts-node src/index.ts",
-    "build": "tsc",
-    "test": "ts-node src/index.ts --test"
+    "build": "tsc"
   },
   "dependencies": {
     "@notionhq/client": "^2.0.0",
     "@slack/web-api": "^6.8.1",
+    "dayjs": "^1.11.13",
     "dotenv": "^16.0.3",
     "node-cron": "^3.0.2"
   },
