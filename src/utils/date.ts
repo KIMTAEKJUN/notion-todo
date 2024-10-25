@@ -1,23 +1,38 @@
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+dayjs.tz.setDefault("Asia/Seoul");
+
+// 날짜를 "M월 D일" 형식의 문자열로 반환
 export const getDateStr = (date: Date = new Date()): string => {
-  const month = date.getMonth() + 1; // getMonth()는 0부터 시작하므로 1을 더함
-  const day = date.getDate();
-  return `${month}월 ${day}일`;
+  return dayjs(date).format("M월 D일");
 };
 
-// API용 날짜 포맷 (ISO 8601)
+// 날짜를 "YYYY-MM-DD" 형식의 문자열로 반환
 export const getISODateStr = (date: Date = new Date()): string => {
-  return date.toISOString().split("T")[0]; // YYYY-MM-DD 형식
+  return dayjs(date).format("YYYY-MM-DD");
 };
 
+// 어제 날짜를 반환
+export const getYesterday = (): Date => {
+  return dayjs().subtract(1, "day").toDate();
+};
+
+// 주말인지 확인
 export const isWeekend = (date: Date = new Date()): boolean => {
-  const day = date.getDay();
-  return day === 0 || day === 6; // 0은 일요일, 6은 토요일
+  const day = dayjs(date).day();
+  return day === 0 || day === 6;
 };
 
+// 마지막 근무일을 반환
 export const getLastWorkday = (): Date => {
-  const date = new Date();
+  let date = dayjs();
   do {
-    date.setDate(date.getDate() - 1);
-  } while (isWeekend(date));
-  return date;
+    date = date.subtract(1, "day");
+  } while (isWeekend(date.toDate())); // 주말이 아니면 종료
+  return date.toDate();
 };
