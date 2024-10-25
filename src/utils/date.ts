@@ -22,13 +22,13 @@ export const getYesterday = (): Date => {
   return dayjs().subtract(1, "day").toDate();
 };
 
-// 주말인지 확인
+// 주어진 날짜가 주말인지 확인
 export const isWeekend = (date: Date = new Date()): boolean => {
   const day = dayjs(date).day();
   return day === 0 || day === 6;
 };
 
-// 마지막 근무일을 반환
+// 가장 최근의 근무일(주말 제외)을 반환
 export const getLastWorkday = (): Date => {
   let date = dayjs();
   do {
