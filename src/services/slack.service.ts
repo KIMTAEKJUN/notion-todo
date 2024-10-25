@@ -1,6 +1,7 @@
 import { WebClient } from "@slack/web-api";
 import { CONFIG } from "../config";
 import { AppError } from "../errors";
+import { SlackNotificationContent, SlackBlock } from "../types/slack.types";
 
 export class SlackService {
   private client: WebClient;
@@ -9,62 +10,20 @@ export class SlackService {
     this.client = new WebClient(CONFIG.SLACK.TOKEN);
   }
 
-  // TODO 생성 알림을 Slack 채널로 전송하는 메서드
-  async sendNotification(
-    todayMessage: string,
-    beforeDayMessage: string,
-    pendingTodos: string[],
-    inProgressTodos: string[]
-  ): Promise<void> {
+  // TODO 생성 알림을 해당 채널로 전송
+  async sendNotification({
+    todayMessage,
+    beforeDayMessage,
+    todos: { pendingTodos, inProgressTodos },
+  }: SlackNotificationContent): Promise<void> {
     try {
-      const blocks = [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `${todayMessage}`,
-          },
-        },
-      ];
+      const blocks = this.buildBlocks({
+        todayMessage,
+        beforeDayMessage,
+        pendingTodos,
+        inProgressTodos,
+      });
 
-      // 이전 날짜의 미완료 항목이 있는 경우
-      if (pendingTodos.length || inProgressTodos.length) {
-        blocks.push({
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `${beforeDayMessage}`,
-          },
-        });
-      }
-
-      // 미완료된 진행전 작업 목록을 추가
-      if (pendingTodos.length) {
-        blocks.push({
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*🚀 미완료된 진행전 작업:*\n${pendingTodos
-              .map((todo) => `• ${todo}`)
-              .join("\n")}`,
-          },
-        });
-      }
-
-      // 미완료된 진행 중 작업 목록을 추가
-      if (inProgressTodos.length) {
-        blocks.push({
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*📝 미완료된 진행중 작업:*\n${inProgressTodos
-              .map((todo) => `• ${todo}`)
-              .join("\n")}`,
-          },
-        });
-      }
-
-      // Slack 메시지 전송
       await this.client.chat.postMessage({
         channel: CONFIG.SLACK.CHANNEL,
         text: todayMessage,
@@ -73,5 +32,70 @@ export class SlackService {
     } catch (error) {
       throw new AppError("슬랙 알림 전송 실패", 503);
     }
+  }
+
+  // 메시지를 생성
+  private buildBlocks({
+    todayMessage,
+    beforeDayMessage,
+    pendingTodos,
+    inProgressTodos,
+  }: {
+    todayMessage: string;
+    beforeDayMessage: string;
+    pendingTodos: string[];
+    inProgressTodos: string[];
+  }): SlackBlock[] {
+    const blocks: SlackBlock[] = [this.createBlock(todayMessage)];
+
+    const hasTodos = pendingTodos.length > 0 || inProgressTodos.length > 0;
+    if (hasTodos) {
+      blocks.push(this.createBlock(beforeDayMessage));
+
+      if (pendingTodos.length) {
+        blocks.push(
+          this.createBlock(
+            `*🚀 미완료된 진행전 작업:*\n${this.formatTodos(pendingTodos)}`
+          )
+        );
+      }
+
+      if (inProgressTodos.length) {
+        blocks.push(
+          this.createBlock(
+            `*📝 미완료된 진행중 작업:*\n${this.formatTodos(inProgressTodos)}`
+          )
+        );
+      }
+    }
+
+    return blocks;
+  }
+
+  // 단일 블록을 생성
+  private createBlock(text: string): SlackBlock {
+    return {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text,
+      },
+    };
+  }
+
+  private formatTodos(todos: string[]): string {
+    return todos.map((todo) => `• ${todo}`).join("\n");
+  }
+
+  // 에러 발생 시 알림 전송
+  async sendErrorNotification(errorMessage: string): Promise<void> {
+    await this.sendNotification({
+      todayMessage: `🚨 ${errorMessage}`,
+      beforeDayMessage: "🧑🏻‍💻 서비스를 확인해주세요.",
+      todos: {
+        pendingTodos: [],
+        inProgressTodos: [],
+      },
+    });
   }
 }

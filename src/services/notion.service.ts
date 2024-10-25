@@ -4,6 +4,11 @@ import { AppError } from "../errors";
 import { createHeading, createTodo, createParagraph } from "../utils/blocks";
 import { getDateStr, getISODateStr, getLastWorkday } from "../utils/date";
 import {
+  NotionBlock,
+  TodoSection,
+  TodoSectionType,
+} from "../types/notion.types";
+import {
   CreatePageResponse,
   BlockObjectRequest,
 } from "@notionhq/client/build/src/api-endpoints";
@@ -16,10 +21,7 @@ export class NotionService {
   }
 
   // 이전 날짜의 미완료된 TODO 항목들을 가져오는 메서드
-  async getYesterdayUncompletedTodos(): Promise<{
-    pendingTodos: string[];
-    inProgressTodos: string[];
-  }> {
+  async getYesterdayUncompletedTodos(): Promise<TodoSection> {
     try {
       const lastWorkday = getLastWorkday();
       const dateStr = getDateStr(lastWorkday);
@@ -59,136 +61,130 @@ export class NotionService {
         block_id: response.results[0].id,
       });
 
-      // 미완료된 TODO 항목들을 추출
-      const { pendingTodos, inProgressTodos } = this.extractTodos(
-        blocks.results
-      );
-
-      // 추출된 TODO 항목들 반환
-      return {
-        pendingTodos,
-        inProgressTodos,
-      };
+      return this.extractTodos(blocks.results as NotionBlock[]);
     } catch (error) {
       throw new AppError("할 일 목록을 불러오는 중 오류가 발생했습니다.", 500);
     }
-  }
-
-  // 페이지 블록에서 미완료된 TODO 항목을 추출하는 메서드
-  private extractTodos(blocks: any[]): {
-    pendingTodos: string[];
-    inProgressTodos: string[];
-  } {
-    const pendingTodos: string[] = [];
-    const inProgressTodos: string[] = [];
-    let currentSection = "";
-
-    for (const block of blocks) {
-      // 섹션 구분: "진행전", "진행중" 헤더를 기준으로 현재 섹션을 추적
-      if (block.type === "heading_2") {
-        const text = block.heading_2.rich_text[0]?.plain_text || "";
-
-        if (text.includes("진행전")) currentSection = "pending";
-        else if (text.includes("진행중")) currentSection = "inProgress";
-        else currentSection = "";
-        continue;
-      }
-
-      // TODO 항목 추출: 체크되지 않은 항목만 추출
-      if (block.type === "to_do") {
-        const text = block.to_do.rich_text[0]?.plain_text || "";
-        const isChecked = block.to_do.checked || false;
-
-        if (text && !isChecked) {
-          if (currentSection === "pending") {
-            pendingTodos.push(text);
-          } else if (currentSection === "inProgress") {
-            inProgressTodos.push(text);
-          }
-        }
-      }
-    }
-    return { pendingTodos, inProgressTodos };
   }
 
   // 금일 TODO 페이지를 생성하는 메서드
   async createDailyTodo(): Promise<CreatePageResponse> {
     try {
       const today = new Date();
-      console.log("생성될 TODO 날짜:", {
-        dateStr: getDateStr(today),
-        isoDate: getISODateStr(today),
-      });
-
-      const lastWorkday = getLastWorkday();
-      console.log("가져올 미완료 항목 날짜:", {
-        dateStr: getDateStr(lastWorkday),
-        isoDate: getISODateStr(lastWorkday),
-      });
-
       const { pendingTodos, inProgressTodos } =
         await this.getYesterdayUncompletedTodos();
 
-      // 금일 TODO 페이지에 포함할 블록들 생성
-      const children: BlockObjectRequest[] = [
-        createHeading("🚀 진행전인 작업"),
-        ...(pendingTodos.length > 0
-          ? pendingTodos.map((todo) => createTodo(todo))
-          : [createTodo()]), // TODO 항목이 없으면 기본 항목 생성
-        createParagraph(),
+      const children = this.buildPageBlocks({ pendingTodos, inProgressTodos });
 
-        createHeading("📝 진행중인 작업"),
-        ...(inProgressTodos.length > 0
-          ? inProgressTodos.map((todo) => createTodo(todo))
-          : [createTodo()]),
-        createParagraph(),
-
-        createHeading("✅ 완료된 작업"),
-        createTodo(),
-        createParagraph(),
-
-        createHeading("📚 학습 노트"),
-        createParagraph(),
-      ];
-
-      // Notion 페이지 생성 요청
-      const response = await this.client.pages.create({
-        parent: {
-          database_id: CONFIG.NOTION.DATABASE_ID,
-        },
-        icon: {
-          type: "emoji",
-          emoji: "📅",
-        },
-        properties: {
-          이름: {
-            title: [
-              {
-                text: {
-                  content: `${getDateStr(today)} TODO`,
-                },
-              },
-            ],
-          },
-          날짜: {
-            date: {
-              start: getISODateStr(today),
-            },
-          },
-          태그: {
-            multi_select: [
-              {
-                name: "TODO",
-              },
-            ],
-          },
-        },
+      return this.client.pages.create({
+        parent: { database_id: CONFIG.NOTION.DATABASE_ID },
+        icon: { type: "emoji", emoji: "📅" },
+        properties: this.buildPageProperties(today),
         children,
       });
-
-      return response;
     } catch (error) {
-      throw new AppError("TODO를 생성하는 중 오류가 발생했습니다.", 500);
+      throw new AppError("TODO 생성 실패", 500);
     }
+  }
+
+  // 페이지 블록에서 미완료된 TODO 항목을 추출하는 메서드
+  private extractTodos(blocks: NotionBlock[]): TodoSection {
+    return {
+      pendingTodos: this.getTodosBySection(blocks, TodoSectionType.PENDING),
+      inProgressTodos: this.getTodosBySection(
+        blocks,
+        TodoSectionType.IN_PROGRESS
+      ),
+    };
+  }
+
+  // 블록의 섹션을 업데이트하는 메서드
+  private updateCurrentSection(
+    block: NotionBlock,
+    currentSection: TodoSectionType
+  ): TodoSectionType {
+    if (block.type !== "heading_2") return currentSection;
+
+    const text = block.heading_2?.rich_text[0]?.plain_text || "";
+
+    if (text.includes("진행전")) return TodoSectionType.PENDING;
+    if (text.includes("진행중")) return TodoSectionType.IN_PROGRESS;
+
+    return TodoSectionType.NONE;
+  }
+
+  // 블록에서 TODO 항목을 추출하는 메서드
+  private extractTodoText(block: NotionBlock): string | null {
+    if (block.type !== "to_do") return null;
+
+    const todoData = block.to_do;
+    if (!todoData || todoData.checked) return null;
+
+    const text = todoData.rich_text[0]?.plain_text;
+    return text || null;
+  }
+
+  // 페이지 생성에 필요한 속성을 생성하는 메서드
+  private buildPageProperties(date: Date) {
+    return {
+      이름: {
+        title: [
+          {
+            text: { content: `${getDateStr(date)} TODO` },
+          },
+        ],
+      },
+      날짜: {
+        date: { start: getISODateStr(date) },
+      },
+      태그: {
+        multi_select: [{ name: "TODO" }],
+      },
+    };
+  }
+
+  // 특정 섹션의 TODO 항목을 추출하는 메서드
+  private getTodosBySection(
+    blocks: NotionBlock[],
+    targetSection: TodoSectionType
+  ): string[] {
+    let currentSection = TodoSectionType.NONE;
+    const todos: string[] = [];
+
+    for (const block of blocks) {
+      currentSection = this.updateCurrentSection(block, currentSection);
+
+      if (currentSection === targetSection) {
+        const todoText = this.extractTodoText(block);
+        if (todoText) todos.push(todoText);
+      }
+    }
+
+    return todos;
+  }
+
+  // 페이지 블록을 생성하는 메서드
+  private buildPageBlocks({
+    pendingTodos,
+    inProgressTodos,
+  }: TodoSection): BlockObjectRequest[] {
+    return [
+      createHeading("🚀 진행전인 작업"),
+      ...(pendingTodos.length ? pendingTodos.map(createTodo) : [createTodo()]),
+      createParagraph(),
+
+      createHeading("📝 진행중인 작업"),
+      ...(inProgressTodos.length
+        ? inProgressTodos.map(createTodo)
+        : [createTodo()]),
+      createParagraph(),
+
+      createHeading("✅ 완료된 작업"),
+      createTodo(),
+      createParagraph(),
+
+      createHeading("📚 학습 노트"),
+      createParagraph(),
+    ];
   }
 }
