@@ -9,6 +9,7 @@ export class SlackService {
     this.client = new WebClient(CONFIG.SLACK.TOKEN);
   }
 
+  // TODO 생성 알림을 Slack 채널로 전송하는 메서드
   async sendNotification(
     todayMessage: string,
     beforeDayMessage: string,
@@ -26,6 +27,7 @@ export class SlackService {
         },
       ];
 
+      // 이전 날짜의 미완료 항목이 있는 경우
       if (pendingTodos.length || inProgressTodos.length) {
         blocks.push({
           type: "section",
@@ -36,6 +38,7 @@ export class SlackService {
         });
       }
 
+      // 미완료된 진행전 작업 목록을 추가
       if (pendingTodos.length) {
         blocks.push({
           type: "section",
@@ -48,6 +51,7 @@ export class SlackService {
         });
       }
 
+      // 미완료된 진행 중 작업 목록을 추가
       if (inProgressTodos.length) {
         blocks.push({
           type: "section",
@@ -60,6 +64,7 @@ export class SlackService {
         });
       }
 
+      // Slack 메시지 전송
       await this.client.chat.postMessage({
         channel: CONFIG.SLACK.CHANNEL,
         text: todayMessage,

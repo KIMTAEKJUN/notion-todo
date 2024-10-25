@@ -1,5 +1,6 @@
 import { BlockObjectRequest } from "@notionhq/client/build/src/api-endpoints";
 
+// TODO 제목을 생성하는 메서드
 export const createHeading = (content: string): BlockObjectRequest => ({
   object: "block",
   type: "heading_2",
@@ -13,6 +14,7 @@ export const createHeading = (content: string): BlockObjectRequest => ({
   },
 });
 
+// TODO 항목을 생성하는 메서드
 export const createTodo = (content: string = ""): BlockObjectRequest => ({
   object: "block",
   type: "to_do",
@@ -27,6 +29,7 @@ export const createTodo = (content: string = ""): BlockObjectRequest => ({
   },
 });
 
+// TODO 단락을 생성하는 메서드
 export const createParagraph = (): BlockObjectRequest => ({
   object: "block",
   type: "paragraph",
