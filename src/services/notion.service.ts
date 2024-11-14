@@ -179,10 +179,6 @@ export class NotionService {
         : [createTodo()]),
       createParagraph(),
 
-      createHeading("✅ 완료된 작업"),
-      createTodo(),
-      createParagraph(),
-
       createHeading("📚 학습 노트"),
       createParagraph(),
     ];
